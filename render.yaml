@@ -6,8 +6,5 @@ services:
     startCommand: python main.py
     envVars:
       - key: ALPACA_API_KEY
-        value: {{ALPACA_API_KEY}}  # Use Render dashboard to input this value
       - key: ALPACA_SECRET_KEY
-        value: {{ALPACA_SECRET_KEY}}
       - key: ALPACA_IS_PAPER
-        value: {{ALPACA_IS_PAPER}}
