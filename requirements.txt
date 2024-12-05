@@ -1,0 +1,5 @@
+lumibot
+pandas
+numpy
+python-dotenv
+alpaca-py
