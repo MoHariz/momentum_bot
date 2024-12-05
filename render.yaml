@@ -2,5 +2,13 @@ services:
   - type: web
     name: SMA Momentum Trading Bot
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: ALPACA_API_KEY
+        fromGroup: alpaca
+      - key: ALPACA_SECRET_KEY
+        fromGroup: alpaca
+      - key: ALPACA_IS_PAPER
+        fromGroup: alpaca
+        
