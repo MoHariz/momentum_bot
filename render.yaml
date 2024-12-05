@@ -4,7 +4,3 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
-    envVars:
-      - key: ALPACA_API_KEY
-      - key: ALPACA_SECRET_KEY
-      - key: ALPACA_IS_PAPER
