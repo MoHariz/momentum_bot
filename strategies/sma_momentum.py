@@ -195,7 +195,7 @@ class SMAMomentumBot(Strategy):
         """
         Allocate positions to top-ranked assets, with enhanced bull market logic.
         """
-        available_cash = self.portfolio_value
+        available_cash = self.cash
         total_weight = sum(1 / (index + 1) for index in range(len(top_assets)))
 
         for index, stock in enumerate(top_assets):
@@ -271,6 +271,7 @@ class SMAMomentumBot(Strategy):
         stop_loss_price = last_price - 1.5 * atr
         take_profit_price = last_price + 2 * atr
 
+        self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}")
         order = self.create_order(
             asset=Asset(symbol=stock),
             quantity=quantity,
@@ -279,7 +280,10 @@ class SMAMomentumBot(Strategy):
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
         )
-        self.submit_order(order)
+        try:
+            self.submit_order(order)
+        except Exception as e:
+            self.log_message(f"Error placing trade for {stock}: {e}")
 
     def close_position(self, stock):
         """
@@ -287,13 +291,17 @@ class SMAMomentumBot(Strategy):
         """
         position = self.get_position(stock)
         if position and position.quantity > 0:
+            self.log_message(f"Closing position for {stock}: Quantity={position.quantity}")
             order = self.create_order(
                 asset=Asset(symbol=stock),
                 quantity=position.quantity,
                 type="market",
                 side="sell",
             )
-            self.submit_order(order)
+            try:
+                self.submit_order(order)
+            except Exception as e:
+                self.log_message(f"Error closing position for {stock}: {e}")
 
     def calculate_rsi(self, prices, period=14):
         """
