@@ -271,7 +271,7 @@ class SMAMomentumBot(Strategy):
         stop_loss_price = last_price - 1.5 * atr
         take_profit_price = last_price + 2 * atr
 
-        self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}, Last Price={last_price}")
+        self.log_message(f"Placing trade for {stock} with current cash at {self.cash}: Quantity={quantity}, ATR={atr}, Last Price={last_price}")
         order = self.create_order(
             asset=Asset(symbol=stock),
             quantity=quantity,
