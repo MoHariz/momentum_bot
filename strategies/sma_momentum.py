@@ -195,7 +195,7 @@ class SMAMomentumBot(Strategy):
         """
         Allocate positions to top-ranked assets, with enhanced bull market logic.
         """
-        available_cash = self.get_cash()
+        available_cash = self.portfolio_value
         total_weight = sum(1 / (index + 1) for index in range(len(top_assets)))
 
         for index, stock in enumerate(top_assets):
@@ -238,7 +238,7 @@ class SMAMomentumBot(Strategy):
         """
         Get the current account value and cash available.
         """
-        return self.get_portfolio_value(), self.get_cash()
+        return self.portfolio_value, self.cash
 
     def before_market_opens(self):
         """
@@ -320,7 +320,7 @@ class SMAMomentumBot(Strategy):
         """
         Calculate the current drawdown.
         """
-        portfolio_value = self.get_portfolio_value()
+        portfolio_value = self.portfolio_value
         self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
         return (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
 
