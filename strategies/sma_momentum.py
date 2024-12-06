@@ -191,6 +191,18 @@ class SMAMomentumBot(Strategy):
         top_assets = ranked_assets[:3]
         self.allocate_positions(top_assets)
 
+    def get_quantity_calculation(self, stock, stock_index, allocation, risk_per_trade, available_cash, atr, total_weight):
+        """
+        Calculate the quantity to be traded based on the allocation and risk per trade.
+        """
+        self.log_message(f"Calculating quantity for {stock}: Allocation={allocation}, Risk Per Trade={risk_per_trade}, Available Cash={available_cash}, ATR={atr}, Total Weight={total_weight}")
+        allocation = (1 / (stock_index + 1)) / total_weight
+        risk_amount = available_cash * risk_per_trade * allocation
+        quantity = int(risk_amount / (atr * 2))
+        self.log_message(f"Calculated Quantity: {quantity}")
+
+        return quantity
+
     def allocate_positions(self, top_assets):
         """
         Allocate positions to top-ranked assets, with enhanced bull market logic.
@@ -212,9 +224,7 @@ class SMAMomentumBot(Strategy):
 
             # Enhanced bull market logic
             if self.market_condition == "Bull" and self.detect_bull_market_trend(df):
-                allocation = (1 / (index + 1)) / total_weight
-                risk_amount = available_cash * self.risk_per_trade * allocation
-                quantity = int(risk_amount / (atr * 2))
+                quantity = self.get_quantity_calculation(stock, index, 1, self.risk_per_trade, available_cash, atr, total_weight)
 
                 # Place trade if bullish signal
                 if sma_short_val > sma_long_val:
@@ -224,9 +234,7 @@ class SMAMomentumBot(Strategy):
                     self.close_position(stock)
             else:
                 # Default allocation logic
-                allocation = (1 / (index + 1)) / total_weight
-                risk_amount = available_cash * self.risk_per_trade * allocation
-                quantity = int(risk_amount / (atr * 2))
+                quantity = self.get_quantity_calculation(stock, index, 1, self.risk_per_trade, available_cash, atr, total_weight)
 
                 # Place trade based on SMA crossover
                 if sma_short_val > sma_long_val:
