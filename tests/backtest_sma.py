@@ -53,7 +53,7 @@ for test_name, params in testing_timelines.items():
         backtesting_start=params["start_date"],
         backtesting_end=params["end_date"],
         budget=5000,  # Adjust budget as needed
-        name=test_name
+        name="SMAMomentumBot during " + test_name
     )
     print(f"Results for {test_name}:")
     print(results)
