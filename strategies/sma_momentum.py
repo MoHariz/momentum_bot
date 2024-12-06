@@ -2,7 +2,6 @@ from lumibot.strategies.strategy import Strategy
 from lumibot.entities.asset import Asset
 import pandas as pd
 
-
 class SMAMomentumBot(Strategy):
     """
     A dynamic SMA momentum bot that adjusts its risk per trade based on the detected market condition.
@@ -25,7 +24,7 @@ class SMAMomentumBot(Strategy):
         Adjust the risk per trade based on the detected market condition.
         """
         if self.market_condition == "Bull":
-            self.risk_per_trade = self.base_risk_per_trade * 3.0
+            self.risk_per_trade = self.base_risk_per_trade * 10.0
         elif self.market_condition == "Bear":
             self.risk_per_trade = self.base_risk_per_trade * 0.5
         else:
@@ -112,24 +111,42 @@ class SMAMomentumBot(Strategy):
 
     def on_trading_iteration(self):
         """
-        Main trading logic.
+        Main trading logic with enhanced debugging.
         """
+        # Detect market condition
         self.detect_market_condition()
-        self.filter_universe()
 
-        if len(self.universe) == 0:
+        # Filter universe
+        self.filter_universe()
+        self.log_message(f"Filtered Universe: {self.universe}")
+        if not self.universe:
             self.log_message("No valid stocks in universe. Skipping iteration.")
             return
 
+        # Check drawdown
         drawdown = self.calculate_drawdown()
+        self.log_message(f"Drawdown: {drawdown:.2f}%")
         if drawdown < -20:
             self.log_message("Drawdown exceeds -20%. Pausing trading.")
             return
 
+        # Rank assets
         ranked_assets = self.rank_assets()
+        self.log_message(f"Ranked Assets: {ranked_assets}")
+        if not ranked_assets:
+            self.log_message("No assets ranked. Skipping iteration.")
+            return
+
+        # Allocate positions to top-ranked assets
         top_assets = ranked_assets[:3]
+        self.allocate_positions(top_assets)
+
+    def allocate_positions(self, top_assets):
+        """
+        Allocate positions to top-ranked assets with debugging.
+        """
         available_cash = self.get_cash()
-        total_weight = sum([1 / (index + 1) for index in range(len(top_assets))])
+        total_weight = sum(1 / (index + 1) for index in range(len(top_assets)))
 
         for index, stock in enumerate(top_assets):
             bars = self.get_historical_prices(stock, length=252)
@@ -141,9 +158,10 @@ class SMAMomentumBot(Strategy):
             sma_short_period, sma_long_period = self.get_asset_sma_periods(stock)
             sma_short = df["close"].rolling(sma_short_period).mean().iloc[-1]
             sma_long = df["close"].rolling(sma_long_period).mean().iloc[-1]
-            rsi = self.calculate_rsi(df["close"])
-            current_rsi = rsi.iloc[-1]  # Get the latest RSI value
             atr = self.calculate_atr(df).iloc[-1]
+            rsi = self.calculate_rsi(df["close"]).iloc[-1]
+
+            self.log_message(f"{stock}: SMA Short: {sma_short:.2f}, SMA Long: {sma_long:.2f}, RSI: {rsi:.2f}, ATR: {atr:.2f}")
 
             if pd.isna(atr) or atr <= 0:
                 self.log_message(f"{stock} skipped: Invalid ATR.")
@@ -155,7 +173,7 @@ class SMAMomentumBot(Strategy):
             risk_amount = available_cash * self.risk_per_trade * allocation
             quantity = int(risk_amount / (atr * 2))
 
-            if sma_short > sma_long and current_rsi < 70 and current_quantity == 0:
+            if sma_short > sma_long and current_quantity == 0:
                 self.place_trade(stock, quantity, atr)
             elif sma_short < sma_long and current_quantity > 0:
                 self.close_position(stock)

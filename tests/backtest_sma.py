@@ -41,6 +41,10 @@ testing_timelines = {
     "Comprehensive Backtest": {
         "start_date": datetime(2009, 1, 1),
         "end_date": datetime.today(),
+    },
+    "YTD": {
+        "start_date": datetime(datetime.now().year, 1, 1),
+        "end_date": datetime.today(),
     }
 }
 
