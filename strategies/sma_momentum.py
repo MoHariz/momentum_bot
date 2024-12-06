@@ -38,18 +38,21 @@ class SMAMomentumBot(Strategy):
         is_rsi_bullish = rsi.iloc[-1] > 50
         return is_macd_bullish and is_rsi_bullish
     
-    def adjust_position_size_for_volatility(self, atr, risk_amount):
+    def adjust_position_size_for_volatility(self, atr, risk_amount, last_price):
         """
-        Adjust position size dynamically based on volatility (ATR).
+        Adjust position size dynamically based on volatility (ATR) and stock price.
         """
+        if last_price <= 0:
+            self.log_message("Invalid last price detected. Skipping position sizing.")
+            return 0
 
         atr_multiplier = 1.5 if self.market_condition == "Bull" else 2.5
-        position_size = int(risk_amount / (atr * atr_multiplier))
+        position_size = int(risk_amount / (atr * atr_multiplier * last_price))
         
         # Log details of calculation
         self.log_message(
             f"Calculating position size: Risk Amount={risk_amount}, ATR={atr}, ATR Multiplier={atr_multiplier}, "
-            f"Position Size={position_size}"
+            f"Last Price={last_price}, Position Size={position_size}"
         )
         
         return position_size
@@ -236,7 +239,7 @@ class SMAMomentumBot(Strategy):
             risk_amount = available_cash * self.risk_per_trade * allocation
 
             # Adjust position size using updated method
-            quantity = self.adjust_position_size_for_volatility(atr, risk_amount)
+            quantity = self.adjust_position_size_for_volatility(atr, risk_amount, last_price)
 
             position = self.get_position(stock)
             current_quantity = position.quantity if position else 0
