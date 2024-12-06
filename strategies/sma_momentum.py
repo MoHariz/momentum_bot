@@ -13,7 +13,7 @@ class SMAMomentumBot(Strategy):
         """
         self.sleeptime = "1D"
         self.universe = ["VOO", "QQQ", "GLD", "USMV", "EEM", "IEFA", "AGG", "XLK", "XLV", "XLF"]
-        self.base_risk_per_trade = 0.02
+        self.base_risk_per_trade = 0.03
         self.risk_per_trade = self.base_risk_per_trade
         self.asset_specific_sma = {"default": (10, 30)}
         self.market_condition = "Neutral"
@@ -42,8 +42,16 @@ class SMAMomentumBot(Strategy):
         """
         Adjust position size dynamically based on volatility (ATR).
         """
-        atr_multiplier = 2  # Define ATR buffer for stop-loss calculation
+
+        atr_multiplier = 1.5 if self.market_condition == "Bull" else 2.5
         position_size = int(risk_amount / (atr * atr_multiplier))
+        
+        # Log details of calculation
+        self.log_message(
+            f"Calculating position size: Risk Amount={risk_amount}, ATR={atr}, ATR Multiplier={atr_multiplier}, "
+            f"Position Size={position_size}"
+        )
+        
         return position_size
     
     # 2. Volatility-Based Filters
@@ -53,7 +61,7 @@ class SMAMomentumBot(Strategy):
             return False
 
         atr = self.calculate_atr(spy_data.df).iloc[-1]
-        volatility_threshold = spy_data.df["close"].mean() * 0.02  # Example threshold
+        volatility_threshold = spy_data.df["close"].mean() * 0.05
         return atr > volatility_threshold
 
     def adjust_for_volatility(self):
@@ -68,7 +76,7 @@ class SMAMomentumBot(Strategy):
     
     def adjust_risk_based_on_market(self):
         """Adjust the risk per trade based on the detected market condition."""
-        risk_multipliers = {"Bull": 11.0, "Bear": 0.5, "Flat": 1.0}
+        risk_multipliers = {"Bull": 2.5, "Bear": 0.5, "Flat": 1.0}
         self.risk_per_trade = self.base_risk_per_trade * risk_multipliers.get(self.market_condition, 1.0)
 
     def get_valid_data(self, stock, length=252):
@@ -191,17 +199,11 @@ class SMAMomentumBot(Strategy):
         top_assets = ranked_assets[:3]
         self.allocate_positions(top_assets)
 
-    def get_quantity_calculation(self, stock, stock_index, allocation, risk_per_trade, available_cash, atr, total_weight):
+    def log_position(self, stock, allocation, risk_per_trade, available_cash, atr, total_weight, last_price, quantity):
         """
         Calculate the quantity to be traded based on the allocation and risk per trade.
         """
-        self.log_message(f"Calculating quantity for {stock}: Allocation={allocation}, Risk Per Trade={risk_per_trade}, Available Cash={available_cash}, ATR={atr}, Total Weight={total_weight}")
-        allocation = (1 / (stock_index + 1)) / total_weight
-        risk_amount = available_cash * risk_per_trade * allocation
-        quantity = int(risk_amount / (atr * 2))
-        self.log_message(f"Calculated Quantity: {quantity}")
-
-        return quantity
+        self.log_message(f"Calculating quantity for {stock}: Allocation={allocation}, Risk Per Trade={risk_per_trade}, Available Cash={available_cash}, ATR={atr}, Total Weight={total_weight}, Last Price={last_price}, Calculated Quantity={quantity}")
 
     def allocate_positions(self, top_assets):
         """
@@ -221,26 +223,31 @@ class SMAMomentumBot(Strategy):
             sma_short_val = df["close"].rolling(sma_short).mean().iloc[-1]
             sma_long_val = df["close"].rolling(sma_long).mean().iloc[-1]
             atr = self.calculate_atr(df).iloc[-1]
+            last_price = self.get_last_price(stock)  # Fetch the last price of the stock
 
-            # Enhanced bull market logic
-            if self.market_condition == "Bull" and self.detect_bull_market_trend(df):
-                quantity = self.get_quantity_calculation(stock, index, 1, self.risk_per_trade, available_cash, atr, total_weight)
+            if pd.isna(atr) or atr <= 0:
+                self.log_message(f"{stock} skipped: Invalid ATR ({atr}).")
+                continue
+            if last_price <= 0:
+                self.log_message(f"{stock} skipped: Invalid Last Price ({last_price}).")
+                continue
 
-                # Place trade if bullish signal
-                if sma_short_val > sma_long_val:
-                    self.log_message(f"Placing trade for {stock}: Bull market detected.")
-                    self.place_trade(stock, quantity, atr)
-                elif sma_short_val < sma_long_val:
-                    self.close_position(stock)
-            else:
-                # Default allocation logic
-                quantity = self.get_quantity_calculation(stock, index, 1, self.risk_per_trade, available_cash, atr, total_weight)
+            allocation = 1 / (index + 1)**0.5 / total_weight
+            risk_amount = available_cash * self.risk_per_trade * allocation
 
-                # Place trade based on SMA crossover
-                if sma_short_val > sma_long_val:
-                    self.place_trade(stock, quantity, atr)
-                elif sma_short_val < sma_long_val:
-                    self.close_position(stock)
+            # Adjust position size using updated method
+            quantity = self.adjust_position_size_for_volatility(atr, risk_amount)
+
+            position = self.get_position(stock)
+            current_quantity = position.quantity if position else 0
+            self.log_position(stock, allocation, self.risk_per_trade, available_cash, atr, total_weight, last_price, quantity)
+
+            if sma_short_val > sma_long_val and current_quantity == 0:
+                self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}, Last Price={last_price}.")
+                self.place_trade(stock, quantity, atr)
+            elif sma_short_val < sma_long_val and current_quantity > 0:
+                self.log_message(f"Closing position for {stock}.")
+                self.close_position(stock)
 
     def get_account_value(self):
         """
