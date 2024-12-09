@@ -255,6 +255,8 @@ class SMAMomentumBot(Strategy):
                 elif sma_short_val < sma_long_val:
                     self.log_message(f"Closing position for {stock}.")
                     self.close_position(stock)
+            else:
+                self.log_message(f"Quantity for {stock}: {quantity}. Skipping trade.")
 
     def get_account_value(self):
         """
