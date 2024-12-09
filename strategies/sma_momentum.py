@@ -248,12 +248,13 @@ class SMAMomentumBot(Strategy):
             current_quantity = position.quantity if position else 0
             self.log_position(stock, allocation, self.risk_per_trade, available_cash, atr, total_weight, last_price, quantity)
 
-            if sma_short_val > sma_long_val and current_quantity == 0:
-                self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}, Last Price={last_price}.")
-                self.place_trade(stock, quantity, atr)
-            elif sma_short_val < sma_long_val and current_quantity > 0:
-                self.log_message(f"Closing position for {stock}.")
-                self.close_position(stock)
+            if current_quantity > 0:
+                if sma_short_val > sma_long_val:
+                    self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}, Last Price={last_price}.")
+                    self.place_trade(stock, quantity, atr)
+                elif sma_short_val < sma_long_val:
+                    self.log_message(f"Closing position for {stock}.")
+                    self.close_position(stock)
 
     def get_account_value(self):
         """
