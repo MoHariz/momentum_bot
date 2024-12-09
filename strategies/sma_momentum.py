@@ -18,7 +18,7 @@ class SMAMomentumBot(Strategy):
         self.asset_specific_sma = {"default": (10, 30)}
         self.market_condition = "Neutral"
         self.portfolio_peak = 0
-        self.force_start_immediately = True # Start the bot immediately after deployment. For testing purpose
+        # self.force_start_immediately = True # Start the bot immediately after deployment. For testing purpose
 
     # 1. Introduce Faster Indicators for Bull Markets
     def calculate_macd(self, prices, short_period=12, long_period=26, signal_period=9):
@@ -54,7 +54,6 @@ class SMAMomentumBot(Strategy):
             f"Calculating position size: Risk Amount={risk_amount}, ATR={atr}, ATR Multiplier={atr_multiplier}, "
             f"Last Price={last_price}, Position Size={position_size}"
         )
-        
         return position_size
     
     # 2. Volatility-Based Filters
@@ -79,7 +78,7 @@ class SMAMomentumBot(Strategy):
     
     def adjust_risk_based_on_market(self):
         """Adjust the risk per trade based on the detected market condition."""
-        risk_multipliers = {"Bull": 2.5, "Bear": 0.5, "Flat": 1.0}
+        risk_multipliers = {"Bull": 5.0, "Bear": 0.5, "Flat": 1.0}
         self.risk_per_trade = self.base_risk_per_trade * risk_multipliers.get(self.market_condition, 1.0)
 
     def get_valid_data(self, stock, length=252):
@@ -148,7 +147,7 @@ class SMAMomentumBot(Strategy):
         elif self.market_condition == "Bear":
             return (5, 20)
         elif self.market_condition == "Flat":
-            return (10, 30)
+            return (30, 70)
         return self.asset_specific_sma["default"]
 
     def rank_assets(self):
@@ -201,6 +200,10 @@ class SMAMomentumBot(Strategy):
         # Allocate positions to top-ranked assets
         top_assets = ranked_assets[:3]
         self.allocate_positions(top_assets)
+
+    def on_abrupt_closing(self):
+        self.log_message("Abrupt closing")
+        self.sell_all()
 
     def log_position(self, stock, allocation, risk_per_trade, available_cash, atr, total_weight, last_price, quantity):
         """
@@ -263,9 +266,12 @@ class SMAMomentumBot(Strategy):
         Log the portfolio value and cash available before the market opens.
         """
         value, cash = self.get_account_value()
+        self.detect_market_condition()
         self.log_message("Before Market Opens")
         self.log_message(f"Portfolio Value: {value}")
         self.log_message(f"Cash Available: {cash}")
+        self.log_message(f"Potential Market Condition: {self.market_condition}")
+
     def after_market_closes(self):
         """
         Log the portfolio value and cash available after the market closes.
