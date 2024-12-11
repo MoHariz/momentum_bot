@@ -250,11 +250,9 @@ class SMAMomentumBot(Strategy):
 
             if current_quantity > 0:
                 if sma_short_val > sma_long_val:
-                    self.log_message(f"Placing trade for {stock}: Quantity={quantity}, ATR={atr}, Last Price={last_price}.")
-                    self.place_trade(stock, quantity, atr)
+                    self.place_trade(stock, quantity, atr, last_price)
                 elif sma_short_val < sma_long_val:
-                    self.log_message(f"Closing position for {stock}.")
-                    self.close_position(stock)
+                    self.close_position(stock, last_price)
             else:
                 self.log_message(f"Quantity for {stock}: {quantity}. Skipping trade.")
 
@@ -284,7 +282,7 @@ class SMAMomentumBot(Strategy):
         self.log_message(f"Portfolio Value: {value}")
         self.log_message(f"Cash Available: {cash}")
 
-    def place_trade(self, stock, quantity, atr):
+    def place_trade(self, stock, quantity, atr, last_price):
         """
         Place a trade with the specified quantity and risk management parameters.
         """
@@ -298,7 +296,7 @@ class SMAMomentumBot(Strategy):
         stop_loss_price = last_price - 1.5 * atr
         take_profit_price = last_price + 2 * atr
 
-        self.log_message(f"Placing trade for {stock} with current cash at {self.cash}: Quantity={quantity}, ATR={atr}, Last Price={last_price}")
+        self.log_message(f"Placing trade for {stock} (${last_price}/per share) with current cash at {self.cash}: Quantity={quantity}, ATR={atr}, Last Price={last_price}")
         order = self.create_order(
             asset=Asset(symbol=stock),
             quantity=quantity,
@@ -312,13 +310,13 @@ class SMAMomentumBot(Strategy):
         except Exception as e:
             self.log_message(f"Error placing trade for {stock}: {e}")
 
-    def close_position(self, stock):
+    def close_position(self, stock, last_price):
         """
         Close the position for the specified stock.
         """
         position = self.get_position(stock)
         if position and position.quantity > 0:
-            self.log_message(f"Closing position for {stock}: Quantity={position.quantity}")
+            self.log_message(f"Closing position for {stock} (${last_price}/per share): Quantity={position.quantity}")
             order = self.create_order(
                 asset=Asset(symbol=stock),
                 quantity=position.quantity,
