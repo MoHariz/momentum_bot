@@ -215,6 +215,11 @@ class SMAMomentumBot(Strategy):
         """
         Allocate positions to top-ranked assets, with enhanced bull market logic.
         """
+        total_tradings = {
+            "buy": 0,
+            "sell": 0
+        }
+
         available_cash = self.cash
         total_weight = sum(1 / (index + 1) for index in range(len(top_assets)))
 
@@ -251,10 +256,15 @@ class SMAMomentumBot(Strategy):
             if current_quantity > 0:
                 if sma_short_val > sma_long_val:
                     self.place_trade(stock, quantity, atr, last_price)
+                    total_tradings["buy"] += 1
                 elif sma_short_val < sma_long_val:
                     self.close_position(stock, last_price)
+                    total_tradings["sell"] += 1
             else:
                 self.log_message(f"Quantity for {stock}: {quantity}. Skipping trade.")
+
+        if total_tradings["buy"] == 0 and total_tradings["sell"] == 0:
+            self.log_message("No trades placed for the day.")
 
     def get_account_value(self):
         """
