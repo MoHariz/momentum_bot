@@ -74,10 +74,15 @@ class SimpleMomentumBot(Strategy):
             position = self.get_position(stock)
             current_quantity = position.quantity if position else 0
 
-            # Calculate position size based on risk per trade
-            max_risk_per_trade = self.risk_per_trade * self.get_portfolio_value()  # Risk 2% of portfolio
+            # Calculate maximum risk per trade as 2% of portfolio value
+            portfolio_risk = self.risk_per_trade * self.get_portfolio_value()
+
+            # Use the smaller of portfolio risk or available cash to calculate position size
+            max_risk = min(portfolio_risk, self.get_cash())
+
+            # Calculate position size
             risk_per_share = atr * self.stop_loss_multiplier
-            quantity = int(max_risk_per_trade / risk_per_share)
+            quantity = int(max_risk / risk_per_share)
 
             if sma_short > sma_long and current_quantity == 0:
                 self.place_trade(stock, quantity)
