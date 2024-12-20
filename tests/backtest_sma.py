@@ -7,6 +7,7 @@ from datetime import datetime
 
 # Add the root directory of the project to PYTHONPATH
 from strategies.sma_momentum import SMAMomentumBot
+from strategies.simple_momentum import SimpleMomentumBot
 
 # Define testing timelines
 testing_timelines = {
@@ -45,19 +46,22 @@ testing_timelines = {
     "YTD": {
         "start_date": datetime(datetime.now().year, 1, 1),
         "end_date": datetime.today(),
-    }
+    },
 }
 
 
 # Run backtests for each timeline
 for test_name, params in testing_timelines.items():
     print(f"Running backtest for: {test_name}")
-    results = SMAMomentumBot.run_backtest(
+
+    results = SimpleMomentumBot.run_backtest(
         YahooDataBacktesting,
         backtesting_start=params["start_date"],
         backtesting_end=params["end_date"],
         budget=5000,  # Adjust budget as needed
-        name="SMAMomentumBot during " + test_name
+        name="SimpleMomentumBot during " + test_name,
+        show_plot=True,
+        show_tearsheet=True
     )
     print(f"Results for {test_name}:")
     print(results)
