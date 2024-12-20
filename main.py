@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lumibot.brokers import Alpaca
 from lumibot.traders import Trader
 from strategies.sma_momentum import SMAMomentumBot
+from strategies.simple_momentum import SimpleMomentumBot
 
 import dotenv
 
@@ -23,7 +24,7 @@ ALPACA_CONFIG = {
 
 trader = Trader()
 broker = Alpaca(ALPACA_CONFIG)
-strategy = SMAMomentumBot(broker=broker)
+strategy = SimpleMomentumBot(broker=broker)
 
 # Run the strategy live
 trader.add_strategy(strategy)
