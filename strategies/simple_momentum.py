@@ -45,45 +45,65 @@ class SimpleMomentumBot(Strategy):
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
 
     def on_trading_iteration(self):
+        """
+        Main trading logic.
+        """
+        # Calculate current drawdown
         drawdown = self.calculate_drawdown()
         self.log_message(f"Current Drawdown: {drawdown:.2f}%")
         
+        # Stop trading if drawdown exceeds the threshold
         if drawdown < -20:
             self.log_message("Drawdown exceeds -20%. Pausing trading.")
             return
 
         # Rank assets by risk-adjusted return
         ranked_assets = self.rank_assets()
-        top_assets = ranked_assets[:3]
+        top_assets = ranked_assets[:3]  # Limit to top 3 assets
 
-        
         for index, stock in enumerate(top_assets):
             try:
+                # Fetch historical data
                 bars = self.get_historical_prices(stock, length=252)
                 df = bars.df
             except Exception as e:
                 self.log_message(f"Error fetching data for {stock}: {e}")
                 continue
 
+            # Calculate SMAs and ATR
             sma_short_period, sma_long_period = self.get_asset_sma_periods(stock)
             sma_short = df["close"].rolling(sma_short_period).mean().iloc[-1]
             sma_long = df["close"].rolling(sma_long_period).mean().iloc[-1]
-
             atr = self.calculate_atr(df).iloc[-1]
 
+            # Get the last price and current position
+            last_price = self.get_last_price(stock)
             position = self.get_position(stock)
             current_quantity = position.quantity if position else 0
 
+            # Safeguard checks for valid data
+            if atr <= 0 or last_price <= 0:
+                self.log_message(f"Skipping trade for {stock}: Invalid data. ATR={atr}, Last Price={last_price}")
+                continue
+
             # Calculate maximum risk per trade as 2% of portfolio value
             portfolio_risk = self.risk_per_trade * self.get_portfolio_value()
-
-            # Use the smaller of portfolio risk or available cash to calculate position size
-            max_risk = min(portfolio_risk, self.get_cash())
+            max_risk = min(portfolio_risk, self.get_cash())  # Use the smaller of portfolio risk or available cash
 
             # Calculate position size
             risk_per_share = atr * self.stop_loss_multiplier
-            quantity = int(max_risk / risk_per_share)
+            if risk_per_share > 0:
+                quantity = int(max_risk / risk_per_share)
+                max_quantity_by_cash = int(self.get_cash() / last_price)
+                quantity = min(quantity, max_quantity_by_cash)  # Ensure quantity fits within available cash
+            else:
+                self.log_message(f"Skipping trade for {stock}: Risk per share is zero or negative. Risk per Share={risk_per_share}")
+                continue
 
+            # Log calculation details for debugging
+            self.log_message(f"Calculated quantity for {stock}: {quantity}, Max Risk: {max_risk}, Risk per Share: {risk_per_share}, Last Price: {last_price}")
+
+            # Trading logic
             if sma_short > sma_long and current_quantity == 0:
                 self.place_trade(stock, quantity)
             elif sma_short < sma_long and current_quantity > 0:
@@ -150,4 +170,7 @@ class SimpleMomentumBot(Strategy):
             abs(df["high"] - df["close"].shift(1)),
             abs(df["low"] - df["close"].shift(1))
         ], axis=1).max(axis=1)
-        return tr.rolling(window=period).mean()
+        
+        atr = tr.rolling(window=period).mean()
+        atr.dropna(inplace=True)  # Handle NaN values
+        return atr
