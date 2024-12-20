@@ -57,13 +57,13 @@ class SMAMomentumBot(Strategy):
         return position_size
     
     # 2. Volatility-Based Filters
-    def detect_high_volatility(self):
-        spy_data = self.get_historical_prices("SPY", length=252)
-        if not spy_data or spy_data.df.empty:
+    def detect_high_volatility(self):        
+        spy_data = self.get_valid_data("SPY")
+        if spy_data.empty:
             return False
 
-        atr = self.calculate_atr(spy_data.df).iloc[-1]
-        volatility_threshold = spy_data.df["close"].mean() * 0.05
+        atr = self.calculate_atr(spy_data).iloc[-1]
+        volatility_threshold = spy_data["close"].mean() * 0.05
         return atr > volatility_threshold
 
     def adjust_for_volatility(self):
@@ -81,12 +81,31 @@ class SMAMomentumBot(Strategy):
         risk_multipliers = {"Bull": 5.0, "Bear": 0.5, "Flat": 1.0}
         self.risk_per_trade = self.base_risk_per_trade * risk_multipliers.get(self.market_condition, 1.0)
 
-    def get_valid_data(self, stock, length=252):
-        """Fetch and validate historical price data."""
-        bars = self.get_historical_prices(stock, length=length)
-        if not bars or bars.df.empty or len(bars.df) < 50:
-            return self.log_message(f"Skipping {stock}: Insufficient data.")
-        return bars.df
+    def get_dynamic_length(self, stock):
+        """Dynamically determine data length based on stock's historical availability."""
+        bars = self.get_historical_prices(Asset(stock, "stock"), length=10)
+        df = bars.df
+        df.dropna()
+
+        if df.empty:
+            return 0
+
+        available_days = len(df)
+
+        return min(252, available_days)
+
+    def get_valid_data(self, stock):
+        """Fetch and validate historical price data dynamically."""
+        dynamic_length = self.get_dynamic_length(stock)
+        if dynamic_length == 0:
+            self.log_message(f"Skipping {stock}: No data available.")
+            return None
+        bars = self.get_historical_prices(Asset(stock, "stock"), length=dynamic_length)
+        df = bars.df
+        if df.empty:
+            self.log_message(f"Skipping {stock}: Insufficient data.")
+            return None
+        return df
 
     def filter_universe(self):
         """
@@ -94,8 +113,8 @@ class SMAMomentumBot(Strategy):
         """
         valid_stocks = []
         for stock in self.universe:
-            bars = self.get_valid_data(stock, length=252)
-            if bars is not None:
+            bars = self.get_valid_data(stock)
+            if not bars.empty:
                 valid_stocks.append(stock)
             else:
                 self.log_message(f"Excluding {stock}: Insufficient data.")
@@ -105,8 +124,8 @@ class SMAMomentumBot(Strategy):
         """
         Detect the current market condition based on SPY's SMA slope and trend strength.
         """
-        spy_data = self.get_valid_data("SPY", length=252)
-        if spy_data is None:
+        spy_data = self.get_valid_data("SPY")
+        if not spy_data.empty:
             self.log_message("SPY data unavailable. Defaulting to Neutral market condition.")
             self.market_condition = "Neutral"
             return self.market_condition
@@ -140,8 +159,8 @@ class SMAMomentumBot(Strategy):
         Dynamically adjust SMA periods based on market condition and trend strength.
         """
         if self.market_condition == "Bull":
-            bars = self.get_valid_data(stock, length=252)
-            if bars is not None:
+            bars = self.get_valid_data(stock)
+            if not bars.empty:
                 adx = self.calculate_adx(bars)
                 return (15, 40) if adx.iloc[-1] > 25 else (20, 50)
         elif self.market_condition == "Bear":
@@ -157,8 +176,8 @@ class SMAMomentumBot(Strategy):
         scores = {}
         for stock in self.universe:
             try:
-                bars = self.get_valid_data(stock, length=252)
-                if bars is not None:
+                bars = self.get_valid_data(stock)
+                if not bars.empty:
                     df = bars
                     momentum = (df["close"].iloc[-1] / df["close"].iloc[0]) - 1
                     volatility = df["close"].rolling(20).std().iloc[-1]
@@ -224,16 +243,15 @@ class SMAMomentumBot(Strategy):
         total_weight = sum(1 / (index + 1) for index in range(len(top_assets)))
 
         for index, stock in enumerate(top_assets):
-            bars = self.get_historical_prices(stock, length=252)
-            if not bars or bars.df.empty:
+            bars = self.get_valid_data(stock)
+            if bars.empty:
                 self.log_message(f"Skipping {stock}: Insufficient data.")
                 continue
 
-            df = bars.df
             sma_short, sma_long = self.get_asset_sma_periods(stock)
-            sma_short_val = df["close"].rolling(sma_short).mean().iloc[-1]
-            sma_long_val = df["close"].rolling(sma_long).mean().iloc[-1]
-            atr = self.calculate_atr(df).iloc[-1]
+            sma_short_val = bars["close"].rolling(sma_short).mean().iloc[-1]
+            sma_long_val = bars["close"].rolling(sma_long).mean().iloc[-1]
+            atr = self.calculate_atr(bars).iloc[-1]
             last_price = self.get_last_price(stock)  # Fetch the last price of the stock
 
             if pd.isna(atr) or atr <= 0:
