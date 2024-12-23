@@ -209,18 +209,14 @@ class SimpleMomentumBot(Strategy):
                 return "Neutral"
 
             df = spy_data.df
-            
+                        
             # Calculate 50-day and 200-day SMAs
             df["SMA_50"] = df["close"].rolling(window=50).mean()
             df["SMA_200"] = df["close"].rolling(window=200).mean()
 
             # Calculate RSI (Relative Strength Index)
-            df["RSI"] = self.calculate_rsi(df["close"], period=14)
-
-            # Ensure enough data for SMA and RSI calculations
-            if len(df) < 200 or df["SMA_50"].isna().any() or df["SMA_200"].isna().any():
-                self.log_message("Insufficient SPY data for determining market condition. Defaulting to Neutral.")
-                return "Neutral"
+            rsi = self.calculate_rsi(df["close"], period=14)
+            df["RSI"] = rsi
 
             # Determine market condition
             sma_50 = df["SMA_50"].iloc[-1]
@@ -230,9 +226,9 @@ class SimpleMomentumBot(Strategy):
             # Slope of the 50-day SMA
             sma_50_slope = df["SMA_50"].iloc[-1] - df["SMA_50"].iloc[-2]
 
-            if sma_50 > sma_200 and sma_50_slope > 0 and rsi > 50:
+            if (sma_50 > sma_200) and (sma_50_slope > 0) and (rsi > 50):
                 return "Bull"
-            elif sma_50 < sma_200 and sma_50_slope < 0 and rsi < 50:
+            elif (sma_50 < sma_200) and (sma_50_slope < 0) and (rsi < 50):
                 return "Bear"
             else:
                 return "Neutral"
@@ -245,6 +241,10 @@ class SimpleMomentumBot(Strategy):
         """
         Calculate the Relative Strength Index (RSI).
         """
+        if len(prices) < period:
+            self.log_message("Insufficient data for RSI calculation.")
+            return None
+        
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window=period).mean()
         loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
