@@ -12,42 +12,22 @@ class SimpleMomentumBot(Strategy):
         self.stop_loss_multiplier = 1.5
         self.take_profit_multiplier = 2
         self.risk_per_trade = 0.02
-
-    def get_asset_sma_periods(self, stock):
-        return self.asset_specific_sma.get(stock, self.asset_specific_sma["default"])
-
-    def calculate_drawdown(self):
-        portfolio_value = self.get_portfolio_value()
-        self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
-        drawdown = (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
-        return drawdown
-
-    def rank_assets(self):
-        """
-        Rank assets based on their risk-adjusted momentum.
-        """
-        scores = {}
-        for stock in self.universe:
-            try:
-                bars = self.get_historical_prices(stock, length=252)  # 1 year
-                df = bars.df
-                momentum = (df["close"].iloc[-1] / df["close"].iloc[0]) - 1
-                volatility = df["close"].rolling(20).std().iloc[-1]  # Last 20 days
-                scores[stock] = momentum / volatility
-            except Exception as e:
-                self.log_message(f"Error fetching data for {stock}: {e}")
-                continue
-        return sorted(scores, key=scores.get, reverse=True)
     
     def before_market_opens(self):
         self.log_message("Before Market Opens")
         self.log_message(f"The total value of our portfolio is {self.get_portfolio_value()}")
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
+        self.log_message(f"Potential market condition: {self.determine_market_condition()}")
 
     def on_trading_iteration(self):
         """
         Main trading logic.
         """
+        trades = {
+            "buy": 0,
+            "sell": 0
+        }
+
         # Calculate current drawdown
         drawdown = self.calculate_drawdown()
         self.log_message(f"Current Drawdown: {drawdown:.2f}%")
@@ -101,18 +81,29 @@ class SimpleMomentumBot(Strategy):
                 continue
 
             # Log calculation details for debugging
-            self.log_message(f"Calculated quantity for {stock}: {quantity}, Max Risk: {max_risk}, Risk per Share: {risk_per_share}, Last Price: {last_price}")
+            self.log_message(f"Calculated quantity for {stock}: {quantity}, Last Price: {last_price},Max Risk: {max_risk}, Risk per Share: {risk_per_share}, ATR: {atr}, Portfolio Value: {self.get_portfolio_value()}, Cash: {self.get_cash()}")
 
             # Trading logic
             if sma_short > sma_long and current_quantity == 0:
+                trades["buy"] += 1
                 self.place_trade(stock, quantity)
             elif sma_short < sma_long and current_quantity > 0:
+                trades["sell"] += 1
                 self.close_position(stock)
+
+            # Log trades for the day
+            if trades["buy"] > 0 or trades["sell"] > 0:
+                self.log_message(f"Trades for day: Buy: {trades['buy']}, Sell: {trades['sell']}")
+            else:
+                self.log_message(f"No trades for today.")
+
 
     def after_market_closes(self):
         self.log_message("The market is closed")
         self.log_message(f"The total value of our portfolio is {self.get_portfolio_value()}")
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
+        self.log_message(f"Potential market condition: {self.determine_market_condition()}")
+
 
     def place_trade(self, stock, quantity):
         last_price = self.get_last_price(stock)
@@ -161,6 +152,8 @@ class SimpleMomentumBot(Strategy):
         else:
             self.log_message(f"No open position found for {stock} to close.")
 
+    # Additional helper methods
+
     def calculate_atr(self, df, period=14):
         """
         Calculate the Average True Range (ATR).
@@ -174,3 +167,76 @@ class SimpleMomentumBot(Strategy):
         atr = tr.rolling(window=period).mean()
         atr.dropna(inplace=True)  # Handle NaN values
         return atr
+    
+    def get_asset_sma_periods(self, stock):
+        return self.asset_specific_sma.get(stock, self.asset_specific_sma["default"])
+
+    def calculate_drawdown(self):
+        portfolio_value = self.get_portfolio_value()
+        self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
+        drawdown = (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
+        return drawdown
+
+    def rank_assets(self):
+        """
+        Rank assets based on their risk-adjusted momentum.
+        """
+        scores = {}
+        for stock in self.universe:
+            try:
+                bars = self.get_historical_prices(stock, length=252)  # 1 year
+                df = bars.df
+                momentum = (df["close"].iloc[-1] / df["close"].iloc[0]) - 1
+                volatility = df["close"].rolling(20).std().iloc[-1]  # Last 20 days
+                scores[stock] = momentum / volatility
+            except Exception as e:
+                self.log_message(f"Error fetching data for {stock}: {e}")
+                continue
+        return sorted(scores, key=scores.get, reverse=True)
+    
+    def determine_market_condition(self):
+        """
+        Determine the current market condition based on SPY (S&P 500 ETF).
+
+        Returns:
+            str: The market condition - "Bull", "Bear", or "Neutral".
+        """
+        try:
+            # Fetch SPY historical data (1 year = 252 trading days)
+            spy_data = self.get_historical_prices("SPY", length=252)
+            if not spy_data or spy_data.df.empty:
+                self.log_message("SPY data unavailable. Defaulting to Neutral market condition.")
+                return "Neutral"
+
+            df = spy_data.df
+            
+            # Calculate 50-day and 200-day SMAs
+            df["SMA_50"] = df["close"].rolling(window=50).mean()
+            df["SMA_200"] = df["close"].rolling(window=200).mean()
+
+            # Calculate RSI (Relative Strength Index)
+            df["RSI"] = self.calculate_rsi(df["close"], period=14)
+
+            # Ensure enough data for SMA and RSI calculations
+            if len(df) < 200 or df["SMA_50"].isna().any() or df["SMA_200"].isna().any():
+                self.log_message("Insufficient SPY data for determining market condition. Defaulting to Neutral.")
+                return "Neutral"
+
+            # Determine market condition
+            sma_50 = df["SMA_50"].iloc[-1]
+            sma_200 = df["SMA_200"].iloc[-1]
+            rsi = df["RSI"].iloc[-1]
+
+            # Slope of the 50-day SMA
+            sma_50_slope = df["SMA_50"].iloc[-1] - df["SMA_50"].iloc[-2]
+
+            if sma_50 > sma_200 and sma_50_slope > 0 and rsi > 50:
+                return "Bull"
+            elif sma_50 < sma_200 and sma_50_slope < 0 and rsi < 50:
+                return "Bear"
+            else:
+                return "Neutral"
+        
+        except Exception as e:
+            self.log_message(f"Error determining market condition: {e}. Defaulting to Neutral.")
+            return "Neutral"
