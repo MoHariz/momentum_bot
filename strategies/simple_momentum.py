@@ -240,3 +240,13 @@ class SimpleMomentumBot(Strategy):
         except Exception as e:
             self.log_message(f"Error determining market condition: {e}. Defaulting to Neutral.")
             return "Neutral"
+        
+    def calculate_rsi(self, prices, period=14):
+        """
+        Calculate the Relative Strength Index (RSI).
+        """
+        delta = prices.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+        rs = gain / loss
+        return 100 - 100 / (1 + rs)
