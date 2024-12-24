@@ -1,8 +1,20 @@
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities.asset import Asset
 import pandas as pd
+from enum import Enum
+
+
+class MarketCondition(Enum):
+    """
+    Enum for the different market conditions
+    """
+    Bearish = "Bearish"
+    Bullish = "Bullish"
+    Neutral = "Neutral"
+
 
 class SimpleMomentumBot(Strategy):
+
     def initialize(self):
         self.sleeptime = "1D"  # Run once per day
         self.universe = ["NVDA", "AAPL", "MSFT"]
@@ -12,30 +24,50 @@ class SimpleMomentumBot(Strategy):
         self.stop_loss_multiplier = 1.5
         self.take_profit_multiplier = 2
         self.risk_per_trade = 0.02
-    
+
+        self.sma_slope_threshold = 0.1
+
     def before_market_opens(self):
         self.log_message("Before Market Opens")
-        self.log_message(f"The total value of our portfolio is {self.get_portfolio_value()}")
+        self.log_message(
+            f"The total value of our portfolio is {self.get_portfolio_value()}"
+        )
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
-        self.log_message(f"Potential market condition: {self.determine_market_condition()}")
+        self.log_message(
+            f"Potential market condition: {self.determine_market_condition()}")
 
     def on_trading_iteration(self):
         """
         Main trading logic.
         """
-        trades = {
-            "buy": 0,
-            "sell": 0
-        }
+        # Get the current market condition
+        market_condition = self.determine_market_condition()
+        # print(f"{market_condition} market condition detected.")
 
         # Calculate current drawdown
         drawdown = self.calculate_drawdown()
         self.log_message(f"Current Drawdown: {drawdown:.2f}%")
-        
+
         # Stop trading if drawdown exceeds the threshold
         if drawdown < -20:
             self.log_message("Drawdown exceeds -20%. Pausing trading.")
             return
+
+        if market_condition == MarketCondition.Bearish:
+            self.log_message("Bear market detected. Pausing trading.")
+            return
+        elif market_condition == MarketCondition.Bullish:
+            self.regular_momentum_strategy()
+        else:
+            # Neutral market condition - limit trades or hold cash
+            self.log_message(
+                "Neutral market detected. Holding cash or limiting trades.")
+
+    def regular_momentum_strategy(self):
+        """
+        Regular momentum strategy.
+        """
+        trades = {"buy": 0, "sell": 0}
 
         # Rank assets by risk-adjusted return
         ranked_assets = self.rank_assets()
@@ -51,7 +83,8 @@ class SimpleMomentumBot(Strategy):
                 continue
 
             # Calculate SMAs and ATR
-            sma_short_period, sma_long_period = self.get_asset_sma_periods(stock)
+            sma_short_period, sma_long_period = self.get_asset_sma_periods(
+                stock)
             sma_short = df["close"].rolling(sma_short_period).mean().iloc[-1]
             sma_long = df["close"].rolling(sma_long_period).mean().iloc[-1]
             atr = self.calculate_atr(df).iloc[-1]
@@ -63,25 +96,33 @@ class SimpleMomentumBot(Strategy):
 
             # Safeguard checks for valid data
             if atr <= 0 or last_price <= 0:
-                self.log_message(f"Skipping trade for {stock}: Invalid data. ATR={atr}, Last Price={last_price}")
+                self.log_message(
+                    f"Skipping trade for {stock}: Invalid data. ATR={atr}, Last Price={last_price}"
+                )
                 continue
 
             # Calculate maximum risk per trade as 2% of portfolio value
             portfolio_risk = self.risk_per_trade * self.get_portfolio_value()
-            max_risk = min(portfolio_risk, self.get_cash())  # Use the smaller of portfolio risk or available cash
+            max_risk = min(portfolio_risk, self.get_cash(
+            ))  # Use the smaller of portfolio risk or available cash
 
             # Calculate position size
             risk_per_share = atr * self.stop_loss_multiplier
             if risk_per_share > 0:
                 quantity = int(max_risk / risk_per_share)
                 max_quantity_by_cash = int(self.get_cash() / last_price)
-                quantity = min(quantity, max_quantity_by_cash)  # Ensure quantity fits within available cash
+                quantity = min(quantity, max_quantity_by_cash
+                               )  # Ensure quantity fits within available cash
             else:
-                self.log_message(f"Skipping trade for {stock}: Risk per share is zero or negative. Risk per Share={risk_per_share}")
+                self.log_message(
+                    f"Skipping trade for {stock}: Risk per share is zero or negative. Risk per Share={risk_per_share}"
+                )
                 continue
 
             # Log calculation details for debugging
-            self.log_message(f"Calculated quantity for {stock}: {quantity}, Last Price: {last_price},Max Risk: {max_risk}, Risk per Share: {risk_per_share}, ATR: {atr}, Portfolio Value: {self.get_portfolio_value()}, Cash: {self.get_cash()}")
+            self.log_message(
+                f"Calculated quantity for {stock}: {quantity}, Last Price: {last_price},Max Risk: {max_risk}, Risk per Share: {risk_per_share}, ATR: {atr}, Portfolio Value: {self.get_portfolio_value()}, Cash: {self.get_cash()}"
+            )
 
             # Trading logic
             if sma_short > sma_long and current_quantity == 0:
@@ -93,30 +134,37 @@ class SimpleMomentumBot(Strategy):
 
             # Log trades for the day
             if trades["buy"] > 0 or trades["sell"] > 0:
-                self.log_message(f"Trades for day: Buy: {trades['buy']}, Sell: {trades['sell']}")
+                self.log_message(
+                    f"Trades for day: Buy: {trades['buy']}, Sell: {trades['sell']}"
+                )
             else:
                 self.log_message(f"No trades for today.")
 
-
     def after_market_closes(self):
         self.log_message("The market is closed")
-        self.log_message(f"The total value of our portfolio is {self.get_portfolio_value()}")
+        self.log_message(
+            f"The total value of our portfolio is {self.get_portfolio_value()}"
+        )
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
-        self.log_message(f"Potential market condition: {self.determine_market_condition()}")
-
+        self.log_message(
+            f"Potential market condition: {self.determine_market_condition()}")
 
     def place_trade(self, stock, quantity):
         last_price = self.get_last_price(stock)
 
         if last_price is None or last_price <= 0:
-            self.log_message(f"Invalid last price for {stock}. Skipping trade.")
+            self.log_message(
+                f"Invalid last price for {stock}. Skipping trade.")
             return
 
-        self.log_message(f"Placing buy order for {stock} with quantity {quantity}, Last Price: {last_price}.")
-        
+        self.log_message(
+            f"Placing buy order for {stock} with quantity {quantity}, Last Price: {last_price}."
+        )
+
         # Ensure quantity is an integer and greater than 0
         if quantity <= 0:
-            self.log_message(f"Quantity for {stock} is invalid. Skipping trade.")
+            self.log_message(
+                f"Quantity for {stock} is invalid. Skipping trade.")
             return
 
         # Create and submit the order
@@ -126,8 +174,7 @@ class SimpleMomentumBot(Strategy):
                 quantity=quantity,
                 type="market",
                 side="buy",  # Correctly specify the side as a string,
-                trail_percent=5
-            )
+                trail_percent=5)
             self.submit_order(order)
         except Exception as e:
             self.log_message(f"Error placing order for {stock}: {e}")
@@ -135,24 +182,24 @@ class SimpleMomentumBot(Strategy):
     def close_position(self, stock):
         """Closes an open position for a specific stock."""
         position = self.get_position(stock)
-        
+
         if position and position.quantity > 0:
-            self.log_message(f"Closing position for {stock}, Quantity: {position.quantity}")
+            self.log_message(
+                f"Closing position for {stock}, Quantity: {position.quantity}")
             try:
                 order = self.create_order(
                     asset=Asset(symbol=stock),
                     quantity=position.quantity,
                     type="market",
                     side="sell",  # Use "sell" to close the position,
-                    trail_percent=5
-                )
+                    trail_percent=5)
                 self.submit_order(order)
             except Exception as e:
                 self.log_message(f"Error closing position for {stock}: {e}")
         else:
             self.log_message(f"No open position found for {stock} to close.")
 
-    # Additional helper methods
+    # <----------------------------- Additional helper methods ----------------------------->
 
     def calculate_atr(self, df, period=14):
         """
@@ -162,19 +209,22 @@ class SimpleMomentumBot(Strategy):
             df["high"] - df["low"],
             abs(df["high"] - df["close"].shift(1)),
             abs(df["low"] - df["close"].shift(1))
-        ], axis=1).max(axis=1)
-        
+        ],
+                       axis=1).max(axis=1)
+
         atr = tr.rolling(window=period).mean()
         atr.dropna(inplace=True)  # Handle NaN values
         return atr
-    
+
     def get_asset_sma_periods(self, stock):
-        return self.asset_specific_sma.get(stock, self.asset_specific_sma["default"])
+        return self.asset_specific_sma.get(stock,
+                                           self.asset_specific_sma["default"])
 
     def calculate_drawdown(self):
         portfolio_value = self.get_portfolio_value()
         self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
-        drawdown = (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
+        drawdown = (portfolio_value -
+                    self.portfolio_peak) / self.portfolio_peak * 100
         return drawdown
 
     def rank_assets(self):
@@ -187,13 +237,14 @@ class SimpleMomentumBot(Strategy):
                 bars = self.get_historical_prices(stock, length=252)  # 1 year
                 df = bars.df
                 momentum = (df["close"].iloc[-1] / df["close"].iloc[0]) - 1
-                volatility = df["close"].rolling(20).std().iloc[-1]  # Last 20 days
+                volatility = df["close"].rolling(20).std().iloc[
+                    -1]  # Last 20 days
                 scores[stock] = momentum / volatility
             except Exception as e:
                 self.log_message(f"Error fetching data for {stock}: {e}")
                 continue
         return sorted(scores, key=scores.get, reverse=True)
-    
+
     def determine_market_condition(self):
         """
         Determine the current market condition based on SPY (S&P 500 ETF).
@@ -205,11 +256,13 @@ class SimpleMomentumBot(Strategy):
             # Fetch SPY historical data (1 year = 252 trading days)
             spy_data = self.get_historical_prices("SPY", length=252)
             if not spy_data or spy_data.df.empty:
-                self.log_message("SPY data unavailable. Defaulting to Neutral market condition.")
+                self.log_message(
+                    "SPY data unavailable. Defaulting to Neutral market condition."
+                )
                 return "Neutral"
 
             df = spy_data.df
-                        
+
             # Calculate 50-day and 200-day SMAs
             df["SMA_50"] = df["close"].rolling(window=50).mean()
             df["SMA_200"] = df["close"].rolling(window=200).mean()
@@ -226,17 +279,23 @@ class SimpleMomentumBot(Strategy):
             # Slope of the 50-day SMA
             sma_50_slope = df["SMA_50"].iloc[-1] - df["SMA_50"].iloc[-2]
 
-            if (sma_50 > sma_200) and (sma_50_slope > 0) and (rsi > 50):
-                return "Bull"
-            elif (sma_50 < sma_200) and (sma_50_slope < 0) and (rsi < 50):
-                return "Bear"
+            if (sma_50 > sma_200) and (sma_50_slope
+                                       > self.sma_slope_threshold) and (rsi
+                                                                        > 50):
+                return MarketCondition.Bullish
+            elif (sma_50
+                  < sma_200) and (sma_50_slope
+                                  < -self.sma_slope_threshold) and (rsi < 50):
+                return MarketCondition.Bearish
             else:
-                return "Neutral"
-        
+                return MarketCondition.Neutral
+
         except Exception as e:
-            self.log_message(f"Error determining market condition: {e}. Defaulting to Neutral.")
-            return "Neutral"
-        
+            self.log_message(
+                f"Error determining market condition: {e}. Defaulting to Neutral."
+            )
+            return MarketCondition.Neutral
+
     def calculate_rsi(self, prices, period=14):
         """
         Calculate the Relative Strength Index (RSI).
@@ -244,9 +303,15 @@ class SimpleMomentumBot(Strategy):
         if len(prices) < period:
             self.log_message("Insufficient data for RSI calculation.")
             return None
-        
+
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window=period).mean()
         loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
         rs = gain / loss
         return 100 - 100 / (1 + rs)
+
+    def reset_risk_per_trade(self):
+        self.risk_per_trade = 0.02
+
+    def reset_stop_loss_multiplier(self):
+        self.stop_loss_multiplier = 1.5
