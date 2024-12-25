@@ -7,6 +7,7 @@ The SMA Momentum Trading Bot is a Python-based trading strategy leveraging simpl
 ## Project Structure
 
 - **strategies/sma_momentum.py**: Contains the main `SMAMomentumRefined` class implementing the trading logic.
+- **strategies/simple_momentum.py**: Contains the main `SimpleMomentum` class implementing the trading logic.
 - **tests/backtest_sma.py**: Script to backtest the SMA momentum strategy using historical data.
 - **tests/alpaca_api_test.py**: Tests the connection with Alpaca API.
 - **main.py**: Script to run the strategy live using Alpaca as the broker.
@@ -72,3 +73,4 @@ This project is licensed under the MIT License.
 
 ## Deploy to Render
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+

@@ -2,6 +2,8 @@ from lumibot.strategies.strategy import Strategy
 from lumibot.entities.asset import Asset
 import pandas as pd
 
+from strategies.helper import calculate_macd, calculate_rsi, calculate_atr
+
 class SMAMomentumBot(Strategy):
     """
     A dynamic SMA momentum bot that adjusts its risk per trade based on the detected market condition.
@@ -20,18 +22,9 @@ class SMAMomentumBot(Strategy):
         self.portfolio_peak = 0
         # self.force_start_immediately = True # Start the bot immediately after deployment. For testing purpose
 
-    # 1. Introduce Faster Indicators for Bull Markets
-    def calculate_macd(self, prices, short_period=12, long_period=26, signal_period=9):
-        """Calculate MACD line and Signal line."""
-        ema_short = prices.ewm(span=short_period).mean()
-        ema_long = prices.ewm(span=long_period).mean()
-        macd = ema_short - ema_long
-        signal = macd.ewm(span=signal_period).mean()
-        return macd, signal
-
     def detect_bull_market_trend(self, stock_data):
         prices = stock_data["close"]
-        macd, signal = self.calculate_macd(prices)
+        macd, signal = calculate_macd(prices)
         rsi = self.calculate_rsi(prices)
 
         is_macd_bullish = macd.iloc[-1] > signal.iloc[-1] and macd.iloc[-2] <= signal.iloc[-2]
@@ -62,7 +55,7 @@ class SMAMomentumBot(Strategy):
         if spy_data.empty:
             return False
 
-        atr = self.calculate_atr(spy_data).iloc[-1]
+        atr = calculate_atr(spy_data).iloc[-1]
         volatility_threshold = spy_data["close"].mean() * 0.05
         return atr > volatility_threshold
 
@@ -161,7 +154,7 @@ class SMAMomentumBot(Strategy):
         if self.market_condition == "Bull":
             bars = self.get_valid_data(stock)
             if not bars.empty:
-                adx = self.calculate_adx(bars)
+                adx = calculate_adx(bars)
                 return (15, 40) if adx.iloc[-1] > 25 else (20, 50)
         elif self.market_condition == "Bear":
             return (5, 20)
@@ -356,17 +349,6 @@ class SMAMomentumBot(Strategy):
             except Exception as e:
                 self.log_message(f"Error closing position for {stock}: {e}")
 
-    def calculate_atr(self, df, period=14):
-        """
-        Calculate the Average True Range (ATR).
-        """
-        tr = pd.concat([
-            df["high"] - df["low"],
-            abs(df["high"] - df["close"].shift(1)),
-            abs(df["low"] - df["close"].shift(1))
-        ], axis=1).max(axis=1)
-        return tr.rolling(window=period).mean()
-
     def calculate_drawdown(self):
         """
         Calculate the current drawdown.
@@ -374,32 +356,4 @@ class SMAMomentumBot(Strategy):
         portfolio_value = self.portfolio_value
         self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
         return (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
-
-    def calculate_adx(self, df, period=14):
-        """
-        Calculate the Average Directional Index (ADX).
-        """
-        high, low, close = df["high"], df["low"], df["close"]
-        tr = pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
-        atr = tr.rolling(window=period).mean()
-
-        plus_dm = high.diff()
-        minus_dm = low.diff()
-        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
-        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
-
-        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
-        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
-        dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-        return dx.rolling(window=period).mean()
-
-    def calculate_rsi(self, prices, period=14):
-        """
-        Calculate the Relative Strength Index (RSI).
-        """
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - 100 / (1 + rs)
 
