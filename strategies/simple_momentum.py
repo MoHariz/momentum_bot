@@ -2,6 +2,7 @@ from lumibot.strategies.strategy import Strategy
 from lumibot.entities.asset import Asset
 import pandas as pd
 from enum import Enum
+from strategies.helper import calculate_atr, calculate_rsi
 
 
 class MarketCondition(Enum):
@@ -87,7 +88,7 @@ class SimpleMomentumBot(Strategy):
                 stock)
             sma_short = df["close"].rolling(sma_short_period).mean().iloc[-1]
             sma_long = df["close"].rolling(sma_long_period).mean().iloc[-1]
-            atr = self.calculate_atr(df).iloc[-1]
+            atr = calculate_atr(df).iloc[-1]
 
             # Get the last price and current position
             last_price = self.get_last_price(stock)
@@ -200,22 +201,6 @@ class SimpleMomentumBot(Strategy):
             self.log_message(f"No open position found for {stock} to close.")
 
     # <----------------------------- Additional helper methods ----------------------------->
-
-    def calculate_atr(self, df, period=14):
-        """
-        Calculate the Average True Range (ATR).
-        """
-        tr = pd.concat([
-            df["high"] - df["low"],
-            abs(df["high"] - df["close"].shift(1)),
-            abs(df["low"] - df["close"].shift(1))
-        ],
-                       axis=1).max(axis=1)
-
-        atr = tr.rolling(window=period).mean()
-        atr.dropna(inplace=True)  # Handle NaN values
-        return atr
-
     def get_asset_sma_periods(self, stock):
         return self.asset_specific_sma.get(stock,
                                            self.asset_specific_sma["default"])
@@ -268,7 +253,7 @@ class SimpleMomentumBot(Strategy):
             df["SMA_200"] = df["close"].rolling(window=200).mean()
 
             # Calculate RSI (Relative Strength Index)
-            rsi = self.calculate_rsi(df["close"], period=14)
+            rsi = calculate_rsi(df["close"], period=14)
             df["RSI"] = rsi
 
             # Determine market condition
@@ -295,20 +280,6 @@ class SimpleMomentumBot(Strategy):
                 f"Error determining market condition: {e}. Defaulting to Neutral."
             )
             return MarketCondition.Neutral
-
-    def calculate_rsi(self, prices, period=14):
-        """
-        Calculate the Relative Strength Index (RSI).
-        """
-        if len(prices) < period:
-            self.log_message("Insufficient data for RSI calculation.")
-            return None
-
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - 100 / (1 + rs)
 
     def reset_risk_per_trade(self):
         self.risk_per_trade = 0.02
