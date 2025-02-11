@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from lumibot.backtesting import YahooDataBacktesting
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Add the root directory of the project to PYTHONPATH
 from strategies.sma_momentum import SMAMomentumBot
@@ -45,6 +45,14 @@ testing_timelines = {
     },
     "YTD": {
         "start_date": datetime(datetime.now().year, 1, 1),
+        "end_date": datetime.today(),
+    },
+    "1 week": {
+        "start_date": datetime.today() - timedelta(days=7),
+        "end_date": datetime.today(),
+    },
+    "2024": {
+        "start_date": datetime(2024, 1, 1),
         "end_date": datetime.today(),
     },
 }

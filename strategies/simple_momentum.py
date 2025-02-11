@@ -62,16 +62,17 @@ class SimpleMomentumBot(Strategy):
         else:
             # Neutral market condition - limit trades or hold cash
             self.log_message(
-                "Neutral market detected. Holding cash or limiting trades.")
+                "Neutral market detected. Holding cash or limiting trades."
+            )
 
-    def regular_momentum_strategy(self):
+    def regular_momentum_strategy(self, asset=None):
         """
         Regular momentum strategy.
         """
         trades = {"buy": 0, "sell": 0}
 
         # Rank assets by risk-adjusted return
-        ranked_assets = self.rank_assets()
+        ranked_assets = asset or self.rank_assets()
         top_assets = ranked_assets[:3]  # Limit to top 3 assets
 
         for index, stock in enumerate(top_assets):
@@ -149,6 +150,24 @@ class SimpleMomentumBot(Strategy):
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
         self.log_message(
             f"Potential market condition: {self.determine_market_condition()}")
+        
+    def on_bot_crash(self, error):
+        """
+        Handles unexpected crashes or errors.
+        """
+        error_message = f"Trading bot crashed due to: {error}\n{traceback.format_exc()}"
+        self.log_message(error_message)
+
+        # Reduce risk temporarily
+        self.risk_per_trade = 0.01  # Lower risk to 1% after a crash
+        self.stop_loss_multiplier = 1.0  # Tighter stop loss
+
+        # Log positions
+        for stock in self.universe:
+            position = self.get_position(stock)
+            if position and position.quantity > 0:
+                self.log_message(f"Position still open: {stock}, Quantity: {position.quantity}")
+
 
     def place_trade(self, stock, quantity):
         last_price = self.get_last_price(stock)
@@ -238,47 +257,34 @@ class SimpleMomentumBot(Strategy):
             str: The market condition - "Bull", "Bear", or "Neutral".
         """
         try:
-            # Fetch SPY historical data (1 year = 252 trading days)
             spy_data = self.get_historical_prices("SPY", length=252)
             if not spy_data or spy_data.df.empty:
-                self.log_message(
-                    "SPY data unavailable. Defaulting to Neutral market condition."
-                )
-                return "Neutral"
+                self.log_message("SPY data unavailable. Defaulting to Neutral.")
+                return MarketCondition.Neutral
 
             df = spy_data.df
 
-            # Calculate 50-day and 200-day SMAs
+            # Calculate SMAs
             df["SMA_50"] = df["close"].rolling(window=50).mean()
             df["SMA_200"] = df["close"].rolling(window=200).mean()
+            df["ATR"] = calculate_atr(df)
 
-            # Calculate RSI (Relative Strength Index)
-            rsi = calculate_rsi(df["close"], period=14)
-            df["RSI"] = rsi
-
-            # Determine market condition
             sma_50 = df["SMA_50"].iloc[-1]
             sma_200 = df["SMA_200"].iloc[-1]
-            rsi = df["RSI"].iloc[-1]
+            rsi = calculate_rsi(df["close"], period=14).iloc[-1]
+            atr = df["ATR"].iloc[-1]
+            atr_pct = atr / df["close"].iloc[-1]  # ATR as % of price
 
-            # Slope of the 50-day SMA
-            sma_50_slope = df["SMA_50"].iloc[-1] - df["SMA_50"].iloc[-2]
-
-            if (sma_50 > sma_200) and (sma_50_slope
-                                       > self.sma_slope_threshold) and (rsi
-                                                                        > 50):
+            # Define market conditions
+            if sma_50 > sma_200 and rsi > 50 and atr_pct < 0.02:
                 return MarketCondition.Bullish
-            elif (sma_50
-                  < sma_200) and (sma_50_slope
-                                  < -self.sma_slope_threshold) and (rsi < 50):
+            elif sma_50 < sma_200 and rsi < 50 and atr_pct > 0.03:
                 return MarketCondition.Bearish
             else:
                 return MarketCondition.Neutral
 
         except Exception as e:
-            self.log_message(
-                f"Error determining market condition: {e}. Defaulting to Neutral."
-            )
+            self.log_message(f"Error in market condition: {e}. Defaulting to Neutral.")
             return MarketCondition.Neutral
 
     def reset_risk_per_trade(self):
