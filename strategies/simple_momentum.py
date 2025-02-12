@@ -27,6 +27,8 @@ class SimpleMomentumBot(Strategy):
         self.risk_per_trade = 0.02
 
         self.sma_slope_threshold = 0.1
+        
+        self.day_trades_count = {"buy": 0, "sell": 0}
 
     def before_market_opens(self):
         self.log_message("Before Market Opens")
@@ -69,8 +71,6 @@ class SimpleMomentumBot(Strategy):
         """
         Regular momentum strategy.
         """
-        trades = {"buy": 0, "sell": 0}
-
         # Rank assets by risk-adjusted return
         ranked_assets = asset or self.rank_assets()
         top_assets = ranked_assets[:3]  # Limit to top 3 assets
@@ -128,16 +128,16 @@ class SimpleMomentumBot(Strategy):
 
             # Trading logic
             if sma_short > sma_long and current_quantity == 0:
-                trades["buy"] += 1
+                self.day_trades_count["buy"] += 1
                 self.place_trade(stock, quantity)
             elif sma_short < sma_long and current_quantity > 0:
-                trades["sell"] += 1
+                self.day_trades_count["sell"] += 1
                 self.close_position(stock)
 
             # Log trades for the day
-            if trades["buy"] > 0 or trades["sell"] > 0:
+            if self.day_trades_count["buy"] > 0 or self.day_trades_count["sell"] > 0:
                 self.log_message(
-                    f"Trades for day: Buy: {trades['buy']}, Sell: {trades['sell']}"
+                    f"Trades for day: Buy: {self.day_trades_count['buy']}, Sell: {self.day_trades_count['sell']}"
                 )
             else:
                 self.log_message(f"No trades for today.")
@@ -150,12 +150,13 @@ class SimpleMomentumBot(Strategy):
         self.log_message(f"The amount of cash we have is {self.get_cash()}")
         self.log_message(
             f"Potential market condition: {self.determine_market_condition()}")
+        self.reset_day_trades_count()
         
     def on_bot_crash(self, error):
         """
         Handles unexpected crashes or errors.
         """
-        error_message = f"Trading bot crashed due to: {error}\n{traceback.format_exc()}"
+        error_message = f"Trading bot crashed due to: {error}"
         self.log_message(error_message)
 
         # Reduce risk temporarily
@@ -292,3 +293,6 @@ class SimpleMomentumBot(Strategy):
 
     def reset_stop_loss_multiplier(self):
         self.stop_loss_multiplier = 1.5
+        
+    def reset_day_trades_count(self):
+        self.day_trades_count = {"buy": 0, "sell": 0}
