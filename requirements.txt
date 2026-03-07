@@ -3,4 +3,3 @@ alpaca-trade-api
 pandas
 numpy
 python-dotenv
-PyYAML==6.0.1
