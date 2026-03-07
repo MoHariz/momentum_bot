@@ -13,9 +13,6 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from dotenv import load_dotenv
-load_dotenv()
-
 from lumibot.brokers import Alpaca
 from lumibot.traders import Trader
 from strategies.halal_momentum import HalalMomentumBot

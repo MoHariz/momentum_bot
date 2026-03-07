@@ -2,4 +2,3 @@ lumibot>=4.4.52
 alpaca-trade-api
 pandas
 numpy
-python-dotenv
