@@ -1,6 +1,13 @@
 services:
-  - type: worker
-    name: SMA Momentum Trading Bot
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
+  - type: worker          # background process — no HTTP port needed
+    name: halal-momentum-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: ALPACA_API_KEY
+        sync: false       # set manually in Render dashboard
+      - key: ALPACA_API_SECRET
+        sync: false
+      - key: ALPACA_IS_PAPER
+        value: "true"     # flip to "false" when ready for live $
