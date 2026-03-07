@@ -2,3 +2,5 @@ lumibot>=4.4.52
 alpaca-trade-api
 pandas
 numpy
+PyYAML==6.0.1
+aiohttp<4
