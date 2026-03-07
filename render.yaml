@@ -1,13 +1,13 @@
 services:
-  - type: worker          # background process — no HTTP port needed
+  - type: worker
     name: halal-momentum-bot
     runtime: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip setuptools wheel && pip install "PyYAML==6.0.1" && pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: ALPACA_API_KEY
-        sync: false       # set manually in Render dashboard
+        sync: false
       - key: ALPACA_API_SECRET
         sync: false
       - key: ALPACA_IS_PAPER
-        value: "true"     # flip to "false" when ready for live $
+        value: "true"
