@@ -17,11 +17,13 @@ class HalalMomentumBot(Strategy):
     """
     Halal-screened momentum strategy.
 
-    Universe: MSFT, GOOGL, META, TSLA, LLY (HLAL/SPUS ETF overlap)
+    Universe: MSFT, GOOGL, TSLA, AAPL (HLAL/SPUS ETF overlap)
 
     Entry logic (per stock):
-      - SMA20 > SMA50 (faster crossover vs old SMA10/30)
+      - Market regime must be Bullish (SPY SMA50 > SMA100 AND RSI > 50)
+      - SMA20 > SMA50 (trend confirmation)
       - RSI(14) > 50 (momentum confirmation)
+      - MACD > signal line (momentum accelerating)
       - No existing position
 
     Exit logic (per stock):
@@ -35,20 +37,20 @@ class HalalMomentumBot(Strategy):
       - Intra-iteration cash tracking prevents over-allocation
 
     Risk management:
-      - Max drawdown -20% closes all positions
+      - Max drawdown -15% closes all positions
       - Max 3 trades per day
     """
+
+    # Class-level regime counter so it's accessible after backtest completes
+    _regime_counts = {"Bullish": 0, "Neutral": 0, "Bearish": 0}
 
     def initialize(self):
         self.sleeptime = "1D"
 
         # Halal universe — 4 cleanest momentum stocks from HLAL/SPUS overlap
-        # GOOGL (67% win rate, +$496), MSFT (50%, +$110), TSLA (40%, +$111), AAPL (40%, +$108)
-        # Dropped: NVDA (20% win rate, volatility overwhelms MACD gate)
-        #          AMZN (67% win rate but -$56 net due to oversized losses)
         self.universe = ["MSFT", "GOOGL", "TSLA", "AAPL"]
 
-        # Entry/exit SMA periods — faster than old SMA10/30
+        # Entry/exit SMA periods
         self.sma_fast = 20
         self.sma_slow = 50
 
@@ -61,7 +63,7 @@ class HalalMomentumBot(Strategy):
         self.position_size_pct = 0.20   # 20% per stock, max 3 = 60% invested
 
         # Circuit breakers
-        self.max_drawdown_pct = -15.0   # Tightened from -20% — 4-symbol universe more correlated
+        self.max_drawdown_pct = -15.0
         self.max_daily_trades = 3
 
         # State
@@ -77,12 +79,12 @@ class HalalMomentumBot(Strategy):
         self._fetch_retry_wait = 5
         self._fetch_delay = 0
 
-        # Lookback — 80 daily bars. SMA50 + RSI14 + MACD26 + buffer.
-        self.lookback = 80
+        # Lookback — 120 daily bars. SMA100 needs 100 bars minimum + buffer.
+        self.lookback = 120
         self.lookback_timestep = "day"
 
-        # Regime counter for diagnostics
-        self._regime_counts = {"Bullish": 0, "Neutral": 0, "Bearish": 0}
+        # Reset class-level regime counter for each new backtest run
+        HalalMomentumBot._regime_counts = {"Bullish": 0, "Neutral": 0, "Bearish": 0}
 
     # -------------------------------------------------------------------------
     # Lifecycle hooks
@@ -104,9 +106,9 @@ class HalalMomentumBot(Strategy):
             if df is not None:
                 self._price_cache[symbol] = df
 
-        # Log regime for diagnostics (not used as trade gate)
+        # Determine market regime — now used as trade gate
         market_condition = self.determine_market_condition()
-        self._regime_counts[market_condition.value] += 1
+        HalalMomentumBot._regime_counts[market_condition.value] += 1
 
         drawdown = self.calculate_drawdown()
         self.log_message(f"Market: {market_condition.value} | Drawdown: {drawdown:.2f}%")
@@ -120,7 +122,7 @@ class HalalMomentumBot(Strategy):
                     self._close_position(stock)
             return
 
-        self._run_momentum_strategy()
+        self._run_momentum_strategy(market_condition)
 
     def after_market_closes(self):
         self.log_message("=== After Market Closes ===")
@@ -133,7 +135,7 @@ class HalalMomentumBot(Strategy):
 
     def on_finish(self):
         """Log regime distribution at end of backtest."""
-        counts = self._regime_counts
+        counts = HalalMomentumBot._regime_counts
         total = sum(counts.values())
         if total > 0:
             self.log_message("=== Regime Distribution ===")
@@ -182,10 +184,12 @@ class HalalMomentumBot(Strategy):
     # Core strategy
     # -------------------------------------------------------------------------
 
-    def _run_momentum_strategy(self):
+    def _run_momentum_strategy(self, market_condition):
         """
         For each stock in the ranked universe:
-        - Enter if SMA20 > SMA50 and RSI > 50 and no position
+        - Only enter new positions when market is Bullish
+        - Always check exits regardless of regime
+        - Enter if SMA20 > SMA50 and RSI > 50 and MACD > signal
         - Exit if SMA20 < SMA50 or RSI < 45
         """
         ranked = self._rank_assets()
@@ -225,18 +229,25 @@ class HalalMomentumBot(Strategy):
                 f"| RSI: {rsi:.1f} | MACD: {macd_val:.2f} > Sig: {signal_val:.2f} | Pos: {current_quantity}"
             )
 
-            # Entry: SMA crossover + RSI > 50 + MACD above signal (momentum accelerating)
-            if (sma_fast > sma_slow and rsi > self.rsi_entry
-                    and macd_val > signal_val and current_quantity == 0):
-                quantity = self._calculate_quantity(last_price)
-                if quantity > 0:
-                    self._place_buy(stock, quantity)
-
-            # Exit: SMA reversal OR RSI momentum loss
-            elif current_quantity > 0 and (sma_fast < sma_slow or rsi < self.rsi_exit):
+            # Exit: always check regardless of regime
+            if current_quantity > 0 and (sma_fast < sma_slow or rsi < self.rsi_exit):
                 reason = "SMA crossover" if sma_fast < sma_slow else "RSI exit"
                 self.log_message(f"Exit signal for {stock}: {reason}")
                 self._close_position(stock)
+
+            # Entry: only allowed when market is Bullish
+            elif market_condition == MarketCondition.Bullish:
+                if (sma_fast > sma_slow and rsi > self.rsi_entry
+                        and macd_val > signal_val and current_quantity == 0):
+                    quantity = self._calculate_quantity(last_price)
+                    if quantity > 0:
+                        self._place_buy(stock, quantity)
+
+            else:
+                if current_quantity == 0:
+                    self.log_message(
+                        f"{stock} | Regime {market_condition.value} — no new entries."
+                    )
 
     # -------------------------------------------------------------------------
     # Order helpers
@@ -327,11 +338,17 @@ class HalalMomentumBot(Strategy):
         return sorted(scores, key=scores.get, reverse=True)
 
     # -------------------------------------------------------------------------
-    # Market regime (logged only, not used as trade gate)
+    # Market regime — used as entry gate
     # -------------------------------------------------------------------------
 
     def determine_market_condition(self):
-        """SPY-based regime: SMA50/100 + RSI. Logged for reference only."""
+        """
+        SPY-based regime using SMA50/100 + RSI.
+
+        Bullish:  SMA50 > SMA100 AND RSI > 50  — entries allowed
+        Bearish:  SMA50 < SMA100 OR  RSI < 45  — entries blocked
+        Neutral:  everything else               — entries blocked
+        """
         try:
             df = self._price_cache.get("SPY")
             if df is None:
@@ -347,7 +364,7 @@ class HalalMomentumBot(Strategy):
 
             if sma_50 > sma_100 and rsi > 50:
                 return MarketCondition.Bullish
-            elif sma_50 < sma_100 and rsi < 45:
+            elif sma_50 < sma_100 or rsi < 45:
                 return MarketCondition.Bearish
             else:
                 return MarketCondition.Neutral
