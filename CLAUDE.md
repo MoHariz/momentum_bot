@@ -13,6 +13,7 @@ HalalMomentumBot: a halal-screened daily momentum strategy on Lumibot + Alpaca, 
   - `backtest_yahoo.py`: Yahoo data, the six regime periods (the regression baseline)
   - `backtest_sma.py`: Polygon data, 2025-01-01 to yesterday, needs `POLYGON_API_KEY`. Despite the name, it runs `HalalMomentumBot`.
   - `alpaca_api_test.py`: Alpaca connection check
+  - `unranked_exit_check.py`: fake-data check that held stocks missing from the ranking still get exit checks (no network)
 
 ## Strategy rules (as implemented)
 
@@ -24,7 +25,7 @@ Rules last changed in commit `938c520` (2026-10-25): the drawdown breaker now la
 - **SPY regime:** Bullish = SMA50 > SMA100 and RSI(14) > 50. Bearish = SMA50 < SMA100 or RSI < 45. Otherwise Neutral. A missing SPY fetch or any NaN also gives Neutral. Only Bullish allows entries.
 - **Entry (all):** Bullish regime, SMA20 > SMA50, RSI(14) > 50, MACD(12,26,9) > signal, no current position.
 - **Exit (either):** SMA20 < SMA50 or RSI(14) < 45. Checked in every regime and never blocked by the daily cap.
-- **Processing order:** by 20-day return / 20-day volatility (`_rank_assets`). A stock missing from the ranking is skipped entirely, **including its exit check** (known open issue).
+- **Processing order:** by 20-day return / 20-day volatility (`_rank_assets`). Held stocks missing from the ranking are appended afterwards for an exit check only (since `a556833`). They can't enter.
 - **Sizing:** 20% of portfolio value, capped by `get_cash()` minus cash already committed this run, with a 1-share floor. There is **no limit on open positions**: the "max 3 positions" in the docstring isn't enforced, so all 4 can be held (~80%).
 - **Daily cap:** `max_daily_entries = 3`, counting **buys only**. Exits are unlimited. Counters reset in `after_market_closes`.
 - **Circuit breaker:** at -15% from peak equity, close everything and set `halted`. It stays halted (retrying failed closes) until the regime is Bullish, then resets the peak to current equity and resumes.
@@ -56,22 +57,24 @@ Rules last changed in commit `938c520` (2026-10-25): the drawdown breaker now la
 - Run `python tests/backtest_yahoo.py`. Only `2025` is active by default; uncomment the other five periods in `testing_timelines` to run all six.
 - Settings: $5,000 budget, daily bars, Yahoo data. `show_plot`/`show_tearsheet` open browser windows. The script prints the regime distribution at the end.
 
-Baseline (Yahoo, $5k). **Recorded before commit `938c520`** and not yet re-run. Re-run and replace these before treating them as a regression reference:
+Baseline (Yahoo, $5k), re-run on 2026-10-25 against `a049576` (includes `938c520`). Commit `a556833` produced identical results in all six periods. Fills = filled orders.
 
-| Period | Dates | Return | Max DD | Sharpe | Notes |
-|---|---|---|---|---|---|
-| 2018 Q4 Selloff | 2018-10-01 → 2019-03-31 | -2.2% | -3.8% | -1.33 | 80% Bearish |
-| 2020 COVID Crash + Recovery | 2020-02-01 → 2020-12-31 | +1.8% | -15.4% | 0.10 | DD past -15%; breaker now latches, so expect a change |
-| 2021 Bull Run | 2021-01-01 → 2021-12-31 | +19.0% | -5.5% | 1.70 | 75% Bullish |
-| 2022 Bear Market | 2022-01-01 → 2022-12-31 | 0.0% | 0.0% | — | 92% Bearish, zero trades |
-| 2022–23 Transition | 2022-10-01 → 2023-06-30 | +5.7% | -5.3% | 0.26 | 45% Bullish |
-| 2025 | 2025-01-01 → 2025-12-31 | +10.0% | -5.7% | 0.74 | 52% Bullish |
+| Period | Dates | Return | Max DD | Sharpe | Fills | Notes |
+|---|---|---|---|---|---|---|
+| 2018 Q4 Selloff | 2018-10-01 → 2019-03-31 | -2.17% | -3.84% | -1.33 | 9 | 80% Bearish |
+| 2020 COVID Crash + Recovery | 2020-02-01 → 2020-12-31 | +9.90% | -16.51% | 0.53 | 43 | 51% Bullish; was +1.8% before `938c520` |
+| 2021 Bull Run | 2021-01-01 → 2021-12-31 | +19.04% | -5.54% | 1.70 | 46 | 75% Bullish |
+| 2022 Bear Market | 2022-01-01 → 2022-12-31 | 0.00% | 0.00% | — | 0 | 92% Bearish, zero trades |
+| 2022–23 Transition | 2022-10-01 → 2023-06-30 | +5.70% | -5.30% | 0.26 | 20 | 45% Bullish |
+| 2025 | 2025-01-01 → 2025-12-31 | +9.98% | -5.70% | 0.74 | 27 | 52% Bullish |
 
 Signs of a regression: zero trades outside 2022 (often a lookback/NaN problem), or regime percentages that differ a lot from the baseline.
 
 ## Gotchas
 
 - **Lookback/NaN fallback:** dropping the lookback below ~101 bars gives no error. The regime just reads Neutral every day.
+- **Invalid-price skip:** if `get_last_price` returns `None` or a value ≤ 0, `_run_momentum_strategy` skips the stock entirely, **including the exit check**, even though closing doesn't need the price. Known and deliberately left as is (rule freeze).
+- **Removing a ticker:** close a position before removing its ticker from `self.universe`. Exits and breaker closes only loop over the universe, so a held ticker outside it is never checked or sold.
 - **Regime counter:** `_regime_counts` is class-level. `backtest_yahoo.py` reads it after the run, so don't make it an instance attribute without updating the script.
 - **Deprecated pandas option:** `calculate_adx` uses `mode.use_inf_as_na`, which newer pandas removed. It's unused today, but it will crash if wired in.
 - **RSI smoothing:** RSI uses a simple rolling mean, not Wilder smoothing, so values differ from broker charts.
