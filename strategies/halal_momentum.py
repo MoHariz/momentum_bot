@@ -217,7 +217,14 @@ class HalalMomentumBot(Strategy):
         """
         ranked = self._rank_assets()
 
-        for stock in ranked:
+        # Held stocks that fell out of the ranking still get an exit check.
+        # They can't enter (quantity > 0), so entry behavior is unchanged.
+        unranked_held = [
+            s for s in self.universe
+            if s not in ranked and (p := self.get_position(s)) and p.quantity > 0
+        ]
+
+        for stock in ranked + unranked_held:
             df = self._price_cache.get(stock)
             if df is None:
                 self.log_message(f"No cached data for {stock}, skipping.")
