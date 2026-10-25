@@ -35,7 +35,7 @@ The same strategy code runs both in backtesting and live paper trading, deployed
 - 15% max drawdown circuit breaker — closes all positions and halts trading until the SPY regime turns Bullish again (peak then resets)
 - Peak equity and halt flag persist to `STATE_FILE`, so restarts don't reset the breaker
 - Max 3 new entries per day (exits are never blocked)
-- ATR-based position sizing with 1-share floor
+- Fixed 20%-of-portfolio position sizing, capped by available cash, with 1-share floor
 
 ### Market Regime Filter
 SPY is evaluated each iteration using SMA50/SMA100 + RSI:
@@ -83,7 +83,7 @@ cd momentum_bot
 ### 2. Create Conda Environment
 
 ```sh
-conda create -n momentum-bot python=3.10
+conda create -n momentum-bot python=3.11.9
 conda activate momentum-bot
 pip install -r requirements.txt
 ```
