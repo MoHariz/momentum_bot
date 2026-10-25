@@ -11,3 +11,5 @@ services:
         sync: false
       - key: ALPACA_IS_PAPER
         value: "true"
+      - key: STATE_FILE
+        value: /data2026/bot_state.json

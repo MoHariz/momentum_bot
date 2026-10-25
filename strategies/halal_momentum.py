@@ -1,6 +1,8 @@
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities.asset import Asset
 import pandas as pd
+import json
+import os
 import time
 from enum import Enum
 from strategies.helper import calculate_atr, calculate_rsi, calculate_macd, calculate_sma_slope
@@ -30,6 +32,7 @@ class HalalMomentumBot(Strategy):
       - SMA20 < SMA50 (trend reversal)
       - OR RSI(14) < 45 (momentum loss)
       - OR drawdown circuit breaker fires (closes all)
+      - Exits are never blocked by the daily entry limit
 
     Position sizing:
       - Fixed 20% of portfolio per position (max 3 positions = 60% invested)
@@ -37,8 +40,10 @@ class HalalMomentumBot(Strategy):
       - Intra-iteration cash tracking prevents over-allocation
 
     Risk management:
-      - Max drawdown -15% closes all positions
-      - Max 3 trades per day
+      - Max drawdown -15% closes all positions and halts the bot
+      - Halt is lifted once the SPY regime is Bullish again; peak resets then
+      - Peak equity + halt flag persist to STATE_FILE (live only) across restarts
+      - Max 3 new entries per day
     """
 
     # Class-level regime counter so it's accessible after backtest completes
@@ -64,10 +69,12 @@ class HalalMomentumBot(Strategy):
 
         # Circuit breakers
         self.max_drawdown_pct = -15.0
-        self.max_daily_trades = 3
+        self.max_daily_entries = 3
 
-        # State
+        # State — portfolio_peak and halted are persisted (see _load_state)
         self.portfolio_peak = 0
+        self.halted = False
+        self._state_file = os.getenv("STATE_FILE", "state/bot_state.json")
         self.day_trades_count = {"buy": 0, "sell": 0}
         self._cash_committed = 0
 
@@ -85,6 +92,8 @@ class HalalMomentumBot(Strategy):
 
         # Reset class-level regime counter for each new backtest run
         HalalMomentumBot._regime_counts = {"Bullish": 0, "Neutral": 0, "Bearish": 0}
+
+        self._load_state()
 
     # -------------------------------------------------------------------------
     # Lifecycle hooks
@@ -113,14 +122,28 @@ class HalalMomentumBot(Strategy):
         drawdown = self.calculate_drawdown()
         self.log_message(f"Market: {market_condition.value} | Drawdown: {drawdown:.2f}%")
 
-        # Circuit breaker — close everything and stop
-        if drawdown < self.max_drawdown_pct:
-            self.log_message(f"Drawdown {drawdown:.2f}% hit threshold. Closing all positions.")
-            for stock in self.universe:
-                position = self.get_position(stock)
-                if position and position.quantity > 0:
-                    self._close_position(stock)
-            return
+        # Circuit breaker — latches until the regime turns Bullish again
+        if not self.halted and drawdown < self.max_drawdown_pct:
+            self.log_message(f"Drawdown {drawdown:.2f}% hit threshold. Halting and closing all positions.")
+            self.halted = True
+            self._save_state()
+
+        if self.halted:
+            if market_condition == MarketCondition.Bullish:
+                self.portfolio_peak = self.get_portfolio_value()
+                self.halted = False
+                self._save_state()
+                self.log_message(
+                    f"Regime Bullish — resuming. Peak reset to {self.portfolio_peak:.2f}."
+                )
+            else:
+                # Retry any closes that failed on earlier iterations
+                for stock in self.universe:
+                    position = self.get_position(stock)
+                    if position and position.quantity > 0:
+                        self._close_position(stock)
+                self.log_message(f"Halted (regime {market_condition.value}). No trading.")
+                return
 
         self._run_momentum_strategy(market_condition)
 
@@ -188,18 +211,13 @@ class HalalMomentumBot(Strategy):
         """
         For each stock in the ranked universe:
         - Only enter new positions when market is Bullish
-        - Always check exits regardless of regime
+        - Always check exits regardless of regime or daily entry limit
         - Enter if SMA20 > SMA50 and RSI > 50 and MACD > signal
         - Exit if SMA20 < SMA50 or RSI < 45
         """
         ranked = self._rank_assets()
 
         for stock in ranked:
-            total_trades = self.day_trades_count["buy"] + self.day_trades_count["sell"]
-            if total_trades >= self.max_daily_trades:
-                self.log_message(f"Daily trade limit ({self.max_daily_trades}) reached.")
-                break
-
             df = self._price_cache.get(stock)
             if df is None:
                 self.log_message(f"No cached data for {stock}, skipping.")
@@ -239,6 +257,11 @@ class HalalMomentumBot(Strategy):
             elif market_condition == MarketCondition.Bullish:
                 if (sma_fast > sma_slow and rsi > self.rsi_entry
                         and macd_val > signal_val and current_quantity == 0):
+                    if self.day_trades_count["buy"] >= self.max_daily_entries:
+                        self.log_message(
+                            f"{stock} | Daily entry limit ({self.max_daily_entries}) reached. Skipping."
+                        )
+                        continue
                     quantity = self._calculate_quantity(last_price)
                     if quantity > 0:
                         self._place_buy(stock, quantity)
@@ -379,10 +402,45 @@ class HalalMomentumBot(Strategy):
 
     def calculate_drawdown(self):
         portfolio_value = self.get_portfolio_value()
-        self.portfolio_peak = max(self.portfolio_peak, portfolio_value)
+        if portfolio_value > self.portfolio_peak:
+            self.portfolio_peak = portfolio_value
+            self._save_state()
         if self.portfolio_peak == 0:
             return 0
         return (portfolio_value - self.portfolio_peak) / self.portfolio_peak * 100
+
+    def _load_state(self):
+        """Restore peak + halt flag from STATE_FILE. Skipped in backtests."""
+        if self.is_backtesting:
+            return
+        try:
+            with open(self._state_file) as f:
+                state = json.load(f)
+            self.portfolio_peak = float(state.get("portfolio_peak", 0))
+            self.halted = bool(state.get("halted", False))
+            self.log_message(
+                f"Loaded state from {self._state_file}: "
+                f"peak={self.portfolio_peak:.2f}, halted={self.halted}"
+            )
+        except FileNotFoundError:
+            self.log_message(f"No state file at {self._state_file}. Starting fresh.")
+        except Exception as e:
+            self.log_message(f"WARNING: could not read state file {self._state_file}: {e}. Starting fresh.")
+
+    def _save_state(self):
+        """Atomically write peak + halt flag to STATE_FILE. Skipped in backtests."""
+        if self.is_backtesting:
+            return
+        try:
+            directory = os.path.dirname(self._state_file)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            tmp_path = self._state_file + ".tmp"
+            with open(tmp_path, "w") as f:
+                json.dump({"portfolio_peak": self.portfolio_peak, "halted": self.halted}, f)
+            os.replace(tmp_path, self._state_file)
+        except Exception as e:
+            self.log_message(f"WARNING: could not write state file {self._state_file}: {e}")
 
     def _reset_daily_state(self):
         self.day_trades_count = {"buy": 0, "sell": 0}
