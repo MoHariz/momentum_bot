@@ -32,8 +32,9 @@ The same strategy code runs both in backtesting and live paper trading, deployed
 
 ### Risk Management
 - 20% of portfolio per position (max 3 positions = 60% invested)
-- 15% max drawdown circuit breaker — closes all positions
-- Max 3 trades per day
+- 15% max drawdown circuit breaker — closes all positions and halts trading until the SPY regime turns Bullish again (peak then resets)
+- Peak equity and halt flag persist to `STATE_FILE`, so restarts don't reset the breaker
+- Max 3 new entries per day (exits are never blocked)
 - ATR-based position sizing with 1-share floor
 
 ### Market Regime Filter
@@ -146,8 +147,11 @@ Required Render environment variables:
 ALPACA_API_KEY
 ALPACA_API_SECRET
 ALPACA_IS_PAPER=true
+STATE_FILE=/data2026/bot_state.json
 DISCORD_WEBHOOK_URL (set in Lumibot strategy config)
 ```
+
+`STATE_FILE` must live on the persistent disk — Render's regular filesystem is wiped on every restart/deploy. It defaults to `state/bot_state.json` (fine for local runs). Backtests never read or write it. To manually clear a halt, edit the file and set `"halted": false`.
 
 ## Discord Integration
 
