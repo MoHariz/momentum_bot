@@ -43,6 +43,7 @@ Rules last changed in commit `938c520` (2026-10-25): the drawdown breaker now la
 
 - **Plan and deploys:** Render Starter (paid) background worker, auto-deploying on every push to `main` (the repo's default branch). Start command: `python main.py`.
 - **Python 3.11.9** is pinned in `.python-version`. Newer Python (3.14) fails to build PyYAML, so `PyYAML==6.0.1` and `aiohttp<4` stay pinned too.
+- **Pinned versions:** `requirements.txt` pins `lumibot`, `alpaca-py`, `alpaca-trade-api`, `pandas`, `numpy` and `pandas_market_calendars` with `==` to the production set from 2026-11-10, because unpinned builds drift.
 - **uv:** the build runs `pip install uv && uv pip install --python .venv/bin/python -r requirements.txt`. pip's resolver failed with `resolution-too-deep` on Lumibot's ccxt/coincurve dependency chain, so the build uses uv. Don't switch back to pip.
 - **Persistent disk** at `/data2026`. Render's normal filesystem is wiped on every restart and deploy.
   - It was added in March 2026 for Lumibot's Discord summary. Lumibot creates SQLite tables (`strategy_tracker`, `vars_backup`).
