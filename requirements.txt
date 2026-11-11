@@ -1,6 +1,8 @@
-lumibot>=4.4.52
-alpaca-trade-api
-pandas
-numpy
+lumibot==4.4.56
+alpaca-trade-api==0.26
+alpaca-py==0.44.0
+pandas==3.1.0
+numpy==2.4.6
+pandas_market_calendars==5.5.0
 PyYAML==6.0.1
 aiohttp<4
